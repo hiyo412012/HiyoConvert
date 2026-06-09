@@ -1,0 +1,2 @@
+# HiyoConvert uses only Python standard library.
+# No external packages required.

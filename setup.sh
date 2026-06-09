@@ -35,6 +35,11 @@ if ! command -v ffmpeg &>/dev/null; then
 fi
 echo " [OK] ffmpeg: $(ffmpeg -version 2>&1 | head -1)"
 
+# Install Python packages
+echo " [..] Installing Python packages..."
+python3 -m pip install -r requirements.txt
+echo " [OK] Packages installed"
+
 echo ""
 echo " ==============================="
 echo "   Setup complete!"

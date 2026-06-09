@@ -156,6 +156,7 @@ User input              Scanner              Converter
 ```
 HiyoConvert/
 ├── hiyo-convert.py    # Main converter script
+├── requirements.txt   # Python dependencies (stdlib only)
 ├── setup.bat          # Auto-installer for Windows
 ├── setup.sh           # Auto-installer for Linux / macOS
 ├── README.md          # This file

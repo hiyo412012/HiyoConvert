@@ -39,6 +39,11 @@ if %errorlevel% neq 0 (
     echo [OK] ffmpeg found
 )
 
+:: Install Python dependencies
+echo [..] Installing Python packages...
+python -m pip install -r requirements.txt
+echo [OK] Packages installed
+
 echo.
 echo  ===============================================
 echo     Setup complete!
