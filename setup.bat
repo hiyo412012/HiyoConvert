@@ -13,7 +13,7 @@ echo.
 where python >nul 2>&1
 if %errorlevel% neq 0 (
     echo [..] Python not found - installing via winget...
-    winget install Python.Python.3.14
+    winget install Python.Python
     if %errorlevel% neq 0 (
         echo [!] winget failed. Install manually:
         echo      https://python.org/downloads
