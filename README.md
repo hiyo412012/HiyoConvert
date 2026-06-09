@@ -145,12 +145,8 @@ HiyoConvert/
 ├── hiyo-convert.py    # Main converter script
 ├── setup.bat          # Auto-installer for Windows
 ├── README.md          # This file
-├── Choáy   Hiyo41/    # Vietnamese music
-│   ├── Song1.ogg
-│   └── Song2.mp3
-└── Eng lẹc   Hiyo41/  # English music
-    ├── Song1.mp3
-    └── Song2.ogg
+├── AGENTS.md          # Private local config
+└── .gitignore
 ```
 
 ---
