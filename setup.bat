@@ -12,10 +12,14 @@ echo.
 :: Check Python
 where python >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!!] Python not found
-    echo      Download: https://python.org/downloads
-    pause
-    exit /b 1
+    echo [..] Python not found - installing via winget...
+    winget install Python.Python.3.14
+    if %errorlevel% neq 0 (
+        echo [!] winget failed. Install manually:
+        echo      https://python.org/downloads
+        pause
+        exit /b 1
+    )
 )
 echo [OK] Python found:
 python --version
