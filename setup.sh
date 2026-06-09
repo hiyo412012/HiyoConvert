@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -e
+
+echo ""
+echo " ==============================="
+echo "   HIYOCONVERT - Auto Setup"
+echo "   Batch Audio Converter"
+echo " ==============================="
+echo ""
+
+# Check Python
+if ! command -v python3 &>/dev/null; then
+    echo " [..] Python not found - installing..."
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt update && sudo apt install -y python3 python3-pip
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        if command -v brew &>/dev/null; then
+            brew install python
+        else
+            echo " [!] Install Homebrew first: https://brew.sh"
+            exit 1
+        fi
+    fi
+fi
+echo " [OK] Python: $(python3 --version)"
+
+# Check ffmpeg
+if ! command -v ffmpeg &>/dev/null; then
+    echo " [..] ffmpeg not found - installing..."
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt install -y ffmpeg
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install ffmpeg
+    fi
+fi
+echo " [OK] ffmpeg: $(ffmpeg -version 2>&1 | head -1)"
+
+echo ""
+echo " ==============================="
+echo "   Setup complete!"
+echo ""
+echo "   Usage:"
+echo "     python3 hiyo-convert.py"
+echo "     python3 hiyo-convert.py /home/user/Music"
+echo " ==============================="
+echo ""

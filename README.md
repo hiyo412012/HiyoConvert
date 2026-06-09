@@ -23,29 +23,36 @@
 
 ## Quick Start / Bắt đầu nhanh
 
-### 1. Install / Cài đặt
+### Windows
 
 ```bash
-# Option A: Auto setup (installs Python + ffmpeg)
+# Auto setup (installs Python + ffmpeg)
 setup.bat
 
-# Option B: Manual / Thủ công
+# Or manual
 winget install -e --id Python.Python.3.14
 winget install ffmpeg
-```
 
-### 2. Run / Chạy
-
-```bash
+# Run
 python hiyo-convert.py
+python hiyo-convert.py "D:\Music"
 ```
 
-Or with a specific directory / Hoặc với thư mục cụ thể:
+### Linux / macOS
 
 ```bash
-python hiyo-convert.py "D:\Music"
-python hiyo-convert.py "D:\Downloads\Music"
-python hiyo-convert.py "C:\Users\%USERNAME%\Music"
+# Auto setup
+chmod +x setup.sh && ./setup.sh
+
+# Or manual (Linux)
+sudo apt install -y python3 ffmpeg
+
+# Or manual (macOS)
+brew install python ffmpeg
+
+# Run
+python3 hiyo-convert.py
+python3 hiyo-convert.py /home/user/Music
 ```
 
 ### 3. Just choose / Chỉ cần chọn
@@ -82,8 +89,14 @@ Conversion type:
 
 ## Requirements / Yêu cầu
 
-- **Python 3.7+** — `winget install -e --id Python.Python.3.14` or [python.org](https://python.org/downloads)
-- **ffmpeg** — `winget install ffmpeg` or [ffmpeg.org](https://ffmpeg.org/download.html)
+- **Python 3.7+**
+  - Windows: `winget install -e --id Python.Python.3.14`
+  - Linux: `sudo apt install -y python3 python3-pip`
+  - macOS: `brew install python`
+- **ffmpeg**
+  - Windows: `winget install ffmpeg`
+  - Linux: `sudo apt install -y ffmpeg`
+  - macOS: `brew install ffmpeg`
 
 ---
 
@@ -144,6 +157,7 @@ User input              Scanner              Converter
 HiyoConvert/
 ├── hiyo-convert.py    # Main converter script
 ├── setup.bat          # Auto-installer for Windows
+├── setup.sh           # Auto-installer for Linux / macOS
 ├── README.md          # This file
 ├── AGENTS.md          # Private local config
 └── .gitignore
