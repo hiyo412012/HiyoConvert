@@ -1,4 +1,4 @@
-import os, shutil, subprocess, sys, time, io
+import os, re, shutil, subprocess, sys, time, io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -36,6 +36,8 @@ LANG = {
         "scanning": "Scanning for files / \u0110ang qu\u00e9t...",
         "choose_lang": "Choose language / Ch\u1ecdn ng\u00f4n ng\u1eef:",
         "found": "Found / T\u00ecm th\u1ea5y",
+        "strip_meta": "Strip metadata? / Xo\u00e1 metadata? (y/N): ",
+        "simplify": "Simplify file names? / R\u00fat g\u1ecdn t\u00ean file? (y/N): ",
     },
     "vi": {
         "title": "=== HiyoConvert ===",
@@ -64,6 +66,8 @@ LANG = {
         "scanning": "\u0110ang qu\u00e9t / Scanning...",
         "choose_lang": "Ch\u1ecdn ng\u00f4n ng\u1eef / Choose language:",
         "found": "T\u00ecm th\u1ea5y / Found",
+        "strip_meta": "Xo\u00e1 metadata? / Strip metadata? (y/N): ",
+        "simplify": "R\u00fat g\u1ecdn t\u00ean file? / Simplify file names? (y/N): ",
     },
 }
 
@@ -146,22 +150,43 @@ def pick_dirs(dirs):
             pass
 
 
-def convert_file(mp3: Path, dst_ext: str, codec: str, keep: bool, quality: int):
-    ogg = mp3.with_suffix(dst_ext)
+def convert_file(mp3: Path, dst_ext: str, codec: str, keep: bool, quality: int, strip_meta=False, simplify=False):
     name = mp3.stem
+
+    if simplify:
+        idx = name.find(" - ")
+        if idx > 0:
+            name = name[:idx]
+        name = re.sub(r'[\[\](){}#&,;:!?@$%^*+=<>"\'/\\|~`]', '', name)
+        name = re.sub(r'\s+', ' ', name).strip()
+        if len(name) > 60:
+            name = name[:60].rstrip()
+        dst = mp3.with_name(name + dst_ext)
+        counter = 1
+        while dst.exists():
+            dst = mp3.with_name(f"{name}_{counter}{dst_ext}")
+            counter += 1
+    else:
+        dst = mp3.with_suffix(dst_ext)
+
     idx = name.find(" - ")
     short = name[:idx] if idx > 0 else name
 
-    if ogg.exists():
+    if dst.exists():
         return "skip", short
 
     cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
            "-i", str(mp3)]
 
+    if strip_meta:
+        cmd += ["-map_metadata", "-1", "-vn"]
+    else:
+        cmd += ["-map_metadata", "0"]
+
     if codec == "flac":
         cmd += ["-c:a", "flac", "-compression_level", str(min(quality, 8))]
     elif codec == "libmp3lame":
-        q = max(0, 9 - quality)  # 0=best → 9=worst
+        q = max(0, 9 - quality)
         cmd += ["-c:a", "libmp3lame", "-q:a", str(q)]
     elif codec == "libvorbis":
         cmd += ["-c:a", "libvorbis", "-q:a", str(min(quality, 10))]
@@ -178,7 +203,7 @@ def convert_file(mp3: Path, dst_ext: str, codec: str, keep: bool, quality: int):
     else:
         cmd += ["-c:a", codec, "-q:a", str(min(quality, 10))]
 
-    cmd += ["-map_metadata", "0", str(ogg)]
+    cmd += [str(dst)]
 
     try:
         subprocess.run(cmd, check=True)
@@ -189,7 +214,7 @@ def convert_file(mp3: Path, dst_ext: str, codec: str, keep: bool, quality: int):
         return "fail", short
 
 
-def run_batch(mp3s, dst_ext, codec, keep, quality):
+def run_batch(mp3s, dst_ext, codec, keep, quality, strip_meta=False, simplify=False):
     threads = max(1, os.cpu_count() - 1) if os.cpu_count() else 2
     print(f"\n--- {tr('converting')} {len(mp3s)} {tr('files')} ({tr('threads')}: {threads}) ---\n")
 
@@ -197,7 +222,7 @@ def run_batch(mp3s, dst_ext, codec, keep, quality):
     ok = skip = fail = 0
 
     with ThreadPoolExecutor(max_workers=threads) as pool:
-        fut = {pool.submit(convert_file, f, dst_ext, codec, keep, quality): f for f in mp3s}
+        fut = {pool.submit(convert_file, f, dst_ext, codec, keep, quality, strip_meta, simplify): f for f in mp3s}
         for f in as_completed(fut):
             status, name = f.result()
             if status == "ok":
@@ -278,9 +303,11 @@ def main():
         return
 
     keep = input(tr("keep")).strip().lower() == "y"
+    strip_meta = input(tr("strip_meta")).strip().lower() == "y"
+    simplify = input(tr("simplify")).strip().lower() == "y"
     quality = 5
 
-    run_batch(mp3s, dst_ext, codec, keep, quality)
+    run_batch(mp3s, dst_ext, codec, keep, quality, strip_meta, simplify)
     input("\nPress Enter / Nhấn Enter...")
 
 

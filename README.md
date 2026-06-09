@@ -15,7 +15,6 @@
 | ✅ Interactive menu — just run and choose | ✅ Menu tương tác — chỉ cần chạy và chọn |
 | ✅ Preserves metadata (title, artist, album...) | ✅ Giữ nguyên metadata (tên, ca sĩ, album...) |
 | ✅ Auto-skip already converted files | ✅ Tự động bỏ qua file đã convert |
-| ✅ Bilingual: English & Tiếng Việt | ✅ Song ngữ: Tiếng Việt & English |
 | ✅ Option to keep or delete originals | ✅ Tuỳ chọn giữ hoặc xóa file gốc |
 | ✅ Auto-setup with setup.bat | ✅ Tự động cài đặt với setup.bat |
 
