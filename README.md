@@ -91,8 +91,8 @@ Conversion type:
 
 - **Python 3.7+**
   - Windows: `winget install -e --id Python.Python.3.14`
-  - Linux: `sudo apt install -y python3 python3-pip`
-  - macOS: `brew install python`
+  - Linux: `sudo apt install -y python3 python3-pip python3-venv`
+  - macOS: `brew install python@3.14`
 - **ffmpeg**
   - Windows: `winget install ffmpeg`
   - Linux: `sudo apt install -y ffmpeg`

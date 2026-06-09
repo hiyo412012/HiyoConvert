@@ -12,10 +12,10 @@ echo ""
 if ! command -v python3 &>/dev/null; then
     echo " [..] Python not found - installing..."
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        sudo apt update && sudo apt install -y python3 python3-pip
+        sudo apt update && sudo apt install -y python3 python3-pip python3-venv
     elif [[ "$OSTYPE" == "darwin"* ]]; then
         if command -v brew &>/dev/null; then
-            brew install python
+            brew install python@3.14
         else
             echo " [!] Install Homebrew first: https://brew.sh"
             exit 1
