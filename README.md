@@ -79,34 +79,6 @@ Strip metadata? (y/N):
 Simplify file names? (y/N):
 ```
 
-```
-Select language:
-[1] English
-[2] Tiếng Việt
-
-Conversion type:
-[1]  MP3 → OGG (Vorbis)
-[2]  MP3 → FLAC (Lossless)
-[3]  MP3 → WAV
-[4]  MP3 → AAC (M4A)
-[5]  MP3 → Opus
-[6]  OGG → MP3
-[7]  OGG → FLAC
-[8]  FLAC → MP3
-[9]  FLAC → OGG
-[10] FLAC → WAV
-[11] WAV → MP3
-[12] WAV → FLAC
-[13] WAV → OGG
-[14] AAC → MP3
-[15] Opus → MP3
-[16] ALL → MP3
-[17] ALL → OGG
-[18] ALL → FLAC
-[19] ALL → WAV
-[C]  Custom / Tùy chỉnh
-```
-
 ---
 
 ## Requirements / Yêu cầu
