@@ -1,0 +1,15 @@
+# Music files (user data)
+*.mp3
+*.ogg
+*.flac
+*.wav
+*.m4a
+*.opus
+
+# Python cache
+__pycache__/
+*.pyc
+
+# System
+Thumbs.db
+.DS_Store
