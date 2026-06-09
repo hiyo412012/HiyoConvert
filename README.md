@@ -13,10 +13,11 @@
 | ✅ Multithreading (auto CPU-1 threads) | ✅ Đa luồng thông minh (tự động CPU-1 luồng) |
 | ✅ 19 preset conversion types + custom | ✅ 19 loại chuyển đổi có sẵn + tùy chỉnh |
 | ✅ Interactive menu — just run and choose | ✅ Menu tương tác — chỉ cần chạy và chọn |
-| ✅ Preserves metadata (title, artist, album...) | ✅ Giữ nguyên metadata (tên, ca sĩ, album...) |
 | ✅ Auto-skip already converted files | ✅ Tự động bỏ qua file đã convert |
 | ✅ Option to keep or delete originals | ✅ Tuỳ chọn giữ hoặc xóa file gốc |
-| ✅ Auto-setup with setup.bat | ✅ Tự động cài đặt với setup.bat |
+| ✅ Strip metadata option (privacy) | ✅ Tuỳ chọn xoá metadata (riêng tư) |
+| ✅ Simplify filenames (strip artist, special chars) | ✅ Tuỳ chọn rút gọn tên file |
+| ✅ Auto-setup with setup.bat / setup.sh | ✅ Tự động cài đặt với setup.bat / setup.sh |
 
 ---
 
@@ -30,7 +31,7 @@ setup.bat
 
 # Or manual
 winget install -e --id Python.Python.3.14
-winget install ffmpeg
+winget install -e --id Gyan.FFmpeg
 
 # Run
 python hiyo-convert.py
@@ -55,6 +56,28 @@ python3 hiyo-convert.py /home/user/Music
 ```
 
 ### 3. Just choose / Chỉ cần chọn
+
+```
+Select language:
+[1] English
+[2] Tiếng Việt
+
+Conversion type:
+[1]  MP3 → OGG (Vorbis)
+[2]  MP3 → FLAC (Lossless)
+...
+[19] ALL → WAV
+[C]  Custom / Tùy chỉnh
+
+Select directories:
+[1] AlbumA
+[2] AlbumB
+[A] All
+
+Keep original files? (y/N):
+Strip metadata? (y/N):
+Simplify file names? (y/N):
+```
 
 ```
 Select language:
@@ -93,7 +116,7 @@ Conversion type:
   - Linux: `sudo apt install -y python3 python3-pip python3-venv`
   - macOS: `brew install python@3.14`
 - **ffmpeg**
-  - Windows: `winget install ffmpeg`
+  - Windows: `winget install -e --id Gyan.FFmpeg` (run as Admin)
   - Linux: `sudo apt install -y ffmpeg`
   - macOS: `brew install ffmpeg`
 
@@ -129,24 +152,27 @@ Conversion type:
 ## How it works / Cách hoạt động
 
 ```
-User input              Scanner              Converter
-   │                       │                    │
-   ├─ Language             │                    │
-   ├─ Conversion type      │                    │
-   ├─ Select dirs ───────► │ rglob *.mp3        │
-   └─ Keep originals       │                    │
-                           │                    │
-                           ▼                    ▼
-                     ThreadPoolExecutor ──► ffmpeg -i a.mp3 ...
-                     (CPU-1 threads)        ffmpeg -i b.mp3 ...
-                                            ffmpeg -i c.mp3 ...
+User input                  Scanner              Converter
+   │                           │                    │
+   ├─ Language                 │                    │
+   ├─ Conversion type          │                    │
+   ├─ Select dirs     ───────► │ rglob *.mp3        │
+   ├─ Keep originals           │                    │
+   ├─ Strip metadata?          │                    │
+   ├─ Simplify filenames?      │                    │
+   │                           │                    │
+                               ▼                    ▼
+                         ThreadPoolExecutor ──► ffmpeg -i a.mp3 ...
+                         (CPU-1 threads)        ffmpeg -i b.mp3 ...
+                                                ffmpeg -i c.mp3 ...
 ```
 
 - Uses **ffmpeg** as the backend encoder — supports virtually all audio formats
 - **Multithreaded** via `concurrent.futures.ThreadPoolExecutor`
 - Each file runs in its own ffmpeg process — true parallelism
 - Smart thread count: `CPU cores - 1` (leaves 1 core for system)
-- Metadata preserved with `-map_metadata 0`
+- Option to preserve (`-map_metadata 0`) or strip (`-map_metadata -1`) metadata
+- Option to simplify filenames (strip ` - Artist`, remove special chars, 60-char limit)
 
 ---
 
