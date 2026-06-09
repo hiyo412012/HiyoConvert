@@ -10,6 +10,9 @@
 __pycache__/
 *.pyc
 
+# Private
+AGENTS.md
+
 # System
 Thumbs.db
 .DS_Store
