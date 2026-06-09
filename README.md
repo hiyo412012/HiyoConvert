@@ -30,7 +30,7 @@
 setup.bat
 
 # Option B: Manual / Thủ công
-winget install Python.Python.3.14
+winget install -e --id Python.Python.3.14
 winget install ffmpeg
 ```
 
@@ -82,7 +82,7 @@ Conversion type:
 
 ## Requirements / Yêu cầu
 
-- **Python 3.7+** — `winget install Python.Python.3.14` or [python.org](https://python.org/downloads)
+- **Python 3.7+** — `winget install -e --id Python.Python.3.14` or [python.org](https://python.org/downloads)
 - **ffmpeg** — `winget install ffmpeg` or [ffmpeg.org](https://ffmpeg.org/download.html)
 
 ---
