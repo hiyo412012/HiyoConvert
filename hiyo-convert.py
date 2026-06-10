@@ -865,6 +865,25 @@ def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def show_banner():
+    banner = r"""
+$$   $$\ $$                      $$$$$$\                                                     $$\
+$$ |  $$ |\__|                    $$  __$$\                                                    $$ |
+$$ |  $$ |$$\ $$\   $$\  $$$$$$\  $$ /  \__| $$$$$$\  $$$$$$$\ $$\    $$\  $$$$$$\   $$$$$$\ $$$$$$\
+$$$$$$$$ |$$ |$$ |  $$ |$$  __$$\ $$ |      $$  __$$\ $$  __$$\\$$\  $$  |$$  __$$\ $$  __$$\\_$$  _|
+$$  __$$ |$$ |$$ |  $$ |$$ /  $$ |$$ |      $$ /  $$ |$$ |  $$ |\$$\$$  / $$$$$$$$ |$$ |  \__| $$ |
+$$ |  $$ |$$ |$$ |  $$ |$$ |  $$ |$$ |  $$\ $$ |  $$ |$$ |  $$ | \$$$  /  $$   ____|$$ |       $$ |$$\
+$$ |  $$ |$$ |\$$$$$$$ |\$$$$$$  |\$$$$$$  |\$$$$$$  |$$ |  $$ |  \$  /   \$$$$$$$\ $$ |       \$$$$  |
+\__|  \__|\__| \____$$ | \______/  \______/  \______/ \__|  \__|   \_/     \_______|\__|        \____/
+              $$\   $$ |
+              \$$$$$$  |
+               \______/"""
+    for line in banner.splitlines():
+        cprint(line, C.CYN)
+        time.sleep(0.03)
+    time.sleep(0.5)
+
+
 def main():
     global L
     if not shutil.which("ffmpeg"):
@@ -872,8 +891,7 @@ def main():
         sys.exit(1)
 
     clear_screen()
-    cprint(f"\n  {C.BOLD}{C.CYN}{C.ITALIC}HiyoConvert{C.RST}", "")
-    time.sleep(0.3)
+    show_banner()
     L = choose_language()
     if L is None:
         return
