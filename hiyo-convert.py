@@ -238,7 +238,7 @@ LANG = {
         "choose_dir_pick": "Ch\u1ecdn m\u1ed9t m\u1ee5c / Pick an option",
         "source_type": "Lo\u1ea1i ngu\u1ed3n / Source type",
         "local_files": "File c\u1ee5c b\u1ed9 / Local files",
-        "youtube": "URL YouTube / YouTube URL",
+        "youtube": "URL YouTube/Spotify / YouTube/Spotify URL",
         "enter_urls": "Nh\u1eadp URL YouTube (c\u00e1ch nhau b\u1eb1ng d\u1ea5u ph\u1ea9y ho\u1eb7c xu\u1ed1ng d\u00f2ng, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac) / Enter YouTube URLs (comma or newline separated, empty line to finish)",
         "no_urls": "Ch\u01b0a nh\u1eadp URL / No URLs entered",
         "downloading": "\u0110ang t\u1ea3i / Downloading",
@@ -459,13 +459,51 @@ def configure_settings(tgt_ext, codec_info):
             except ValueError:
                 pass
         elif sel == "2":
-            p = input(f"  {C.CYN}>{C.RST} {tr('enter_outdir')}").strip()
-            if p:
-                pobj = Path(p).resolve()
-                pobj.mkdir(parents=True, exist_ok=True)
-                settings.output_dir = pobj
-            else:
+            dir_items = [
+                (tr("choose_dir_curr"), 1),
+                (tr("choose_dir_enter"), 2),
+            ]
+            if sys.platform == "win32":
+                dir_items.append((tr("choose_dir_browse"), 3))
+            cprint(f"  {C.BOLD}{C.CYN}\u2560 {tr('choose_dir_title')} {C.RST}")
+            for i, (label, _) in enumerate(dir_items, 1):
+                cprint(f"  {C.BOLD}[{i}]{C.RST} {label}")
+            cprint(f"  {C.BOLD}[0]{C.RST} {tr('none')}")
+            cprint(f"  {C.BOLD}[Q]{C.RST} {tr('back_to_menu')}")
+            ds = input(f"  {C.CYN}>{C.RST} ").strip().lower()
+            if ds == "0":
                 settings.output_dir = None
+            elif ds == "1":
+                settings.output_dir = Path.cwd()
+            elif ds == "2":
+                p = input(f"  {C.CYN}>{C.RST} {tr('choose_dir_path')}: ").strip()
+                if p:
+                    pobj = Path(p).resolve()
+                    pobj.mkdir(parents=True, exist_ok=True)
+                    settings.output_dir = pobj
+            elif ds == "3" and sys.platform == "win32":
+                import subprocess as _sp
+                ps_cmd = (
+                    'Add-Type -AssemblyName System.Windows.Forms; '
+                    ' $f=New-Object System.Windows.Forms.FolderBrowserDialog; '
+                    ' $f.Description="Select output directory"; '
+                    ' $f.ShowDialog() | Out-Null; '
+                    ' Write-Output $f.SelectedPath'
+                )
+                try:
+                    result = _sp.run(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        capture_output=True, text=True, timeout=15
+                    )
+                    p = result.stdout.strip()
+                    if p:
+                        pobj = Path(p).resolve()
+                        pobj.mkdir(parents=True, exist_ok=True)
+                        settings.output_dir = pobj
+                    else:
+                        cprint(f"  [!] {tr('choose_dir_invalid')}", C.YLW)
+                except Exception:
+                    cprint(f"  [!] {tr('choose_dir_invalid')}", C.YLW)
         elif sel == "3":
             item = pick_menu(sr_items, "")
             if item:
@@ -487,14 +525,80 @@ def strip_diacritics(text):
 
 
 def simplify_name(name):
+    # Step 1: NFKC normalizes full-width→half-width ASCII, folds compat chars
+    name = unicodedata.normalize('NFKC', name)
+
+    # Step 2: Strip common bracketed noise (Official Video, Lyrics, Remastered, etc.)
+    BRACKET_NOISE = re.compile(
+        r'[\(\[][^\)\]]*'
+        r'(?:official\s+(?:music\s+)?video|official\s+lyric\s+video|'
+        r'lyric\s+video|lyrics\s+video|official\s+audio|'
+        r'official\s+visualizer|lyric\s+visualizer|'
+        r'lyrics|lyric|official|'
+        r'remaster(?:ed)?|remix|rmx|edit|radio\s+edit|extended|'
+        r'instrumental|acapella|demo|live|version|'
+        r'explicit|clean|hd|hq|4k|kbps|'
+        r'youtube|vevo|topic)'
+        r'[^\)\]]*[\)\]]',
+        re.IGNORECASE
+    )
+    name = BRACKET_NOISE.sub('', name)
+
+    # Step 3: Strip trailing noise markers (loop for stacked suffixes)
+    TRAIL_NOISE = re.compile(
+        r'\s*[-–—]?\s*\b(?:official\s+(?:music\s+)?video|official\s+audio|'
+        r'lyric\s+video|lyrics|lyric|official|hd|hq|4k|'
+        r'remaster(?:ed)?|remix|edit|live|instrumental|audio|topic|'
+        r'youtube|vevo)\b\s*$',
+        re.IGNORECASE
+    )
+    prev = None
+    while prev != name:
+        prev = name
+        name = TRAIL_NOISE.sub('', name).strip()
+
+    # Step 4: Remove youtube video ID in brackets: [dQw4w9WgXcQ]
+    name = re.sub(r'\s*\[[\w-]{11}\]\s*', '', name)
+    name = re.sub(r'\s*[-–—]\s*YouTube\s*$', '', name, flags=re.IGNORECASE)
+
+    # Step 5: Remove feat/ft/featuring + following artist name
+    name = re.sub(
+        r'\s*[-–—]?\s*[\(\[\{]?\s*(?:feat\.?|ft\.?|featuring|f\.)\s*'
+        r'[^\]\)\}]*[\]\)\}]?\s*',
+        ' ', name, flags=re.IGNORECASE
+    )
+
+    # Step 6: Strip content before first " - " separator
     idx = name.find(" - ")
     if idx > 0:
         name = name[:idx]
+
+    # Step 7: Strip CJK / wide / symbol Unicode blocks
+    name = re.sub(r'[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef'
+                  r'\u2500-\u257f\u2580-\u259f\u25a0-\u25ff\u2600-\u26ff'
+                  r'\u2700-\u27bf\u2b00-\u2bff\u2000-\u206f'
+                  r'\u2100-\u214f\u2190-\u21ff\u2300-\u23ff'
+                  r'\u2400-\u243f\u2440-\u245f\u2460-\u24ff'
+                  r'\u2e80-\u2eff\u3000-\u303f\u3200-\u33ff'
+                  r'\ufe30-\ufe4f\ufe50-\ufe6f'
+                  r'\U0001F300-\U0001F9FF\U0001FA00-\U0001FA6F]', '', name)
+
+    # Step 8: Strip problematic filesystem characters
     name = re.sub(r'[\[\](){}#&,;:!?@$%^*+=<>"\'/\\|~`]', '', name)
+
+    # Step 9: Normalize dashes and whitespace
+    name = re.sub(r'[\u2013\u2014]', '-', name)
     name = re.sub(r'\s+', ' ', name).strip()
+    name = name.strip('. ')
+
+    # Step 10: Truncate at 60 chars, break at word boundary
     if len(name) > 60:
-        name = name[:60].rstrip()
-    return name
+        name = name[:60]
+        last_space = name.rfind(' ')
+        if last_space > 30:
+            name = name[:last_space]
+
+    return name.strip() or 'untitled'
 
 
 def get_output_path(src: Path, dst_ext, settings, root=None):
@@ -704,15 +808,20 @@ def choose_source_type():
 
 def input_youtube_urls():
     cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('enter_urls')} {C.RST}")
+    cprint(f"  {C.ITALIC}{C.LG}{tr('quit')}/Q = {tr('back_to_menu')}{C.RST}")
     urls = []
     while True:
         line = input(f"  {C.CYN}>{C.RST} ").strip()
         if not line:
             break
+        if line.lower() in ("q", "quit"):
+            return None
         parts = [p.strip() for p in re.split(r'[,\s]+', line) if p.strip()]
         for p in parts:
             if re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', p):
-                urls.append(p)
+                urls.append(("youtube", p))
+            elif "spotify.com" in p.lower():
+                urls.append(("spotify", p))
             else:
                 cprint(f"  [!] {tr('invalid_url')}: {p}", C.YLW)
     if not urls:
@@ -842,14 +951,80 @@ def convert_youtube_one(src_path, dst, dst_ext, codec, settings, codec_info):
         return "fail", short, 0, 0
 
 
+def download_spotify_playlist(url, temp_dir):
+    try:
+        import yt_dlp
+    except ImportError:
+        cprint(f"  [!] yt-dlp not installed. Run: pip install yt-dlp", C.RED)
+        return None
+
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "extract_flat": True}) as ydl:
+        try:
+            info = ydl.extract_info(url, download=False)
+        except Exception as e:
+            cprint(f"  [!] Spotify error: {e}", C.YLW)
+            return None
+
+    entries = info.get("entries", [])
+    if not entries:
+        entries = [info]
+
+    count = len(entries)
+    title = info.get("title", info.get("track", "Spotify"))
+    kind = "playlist" if count > 1 else "track"
+    cprint(f"  {C.LG}[{kind}] {title}: {count} track(s){C.RST}")
+    if count > 5:
+        cprint(f"  {C.YLW}[?] {count} tracks. Download? (Enter=yes, Q=skip){C.RST}")
+        ans = input(f"  {C.CYN}>{C.RST} ").strip().lower()
+        if ans in ("q", "quit", "n", "no", "skip"):
+            cprint(f"  {C.MAG}[skip]{C.RST} {title}")
+            return None
+
+    results = []
+    dl_lock2 = threading.Lock()
+    threads2 = max(1, min(os.cpu_count() or 2, count))
+
+    def _spotdl(entry):
+        track = entry.get("track", entry.get("title", "unknown"))
+        artist = entry.get("artist", entry.get("uploader", "unknown"))
+        search = f"{artist} - {track}"
+        search_url = f"ytsearch1:{search}"
+        out = str(temp_dir / f"%(id)s.%(ext)s")
+        opts = {
+            "format": "bestaudio/best",
+            "outtmpl": out,
+            "quiet": True,
+            "no_warnings": True,
+        }
+        try:
+            with yt_dlp.YoutubeDL(opts) as yd:
+                vinfo = yd.extract_info(search_url, download=True)
+                if vinfo and "entries" in vinfo and vinfo["entries"]:
+                    vid = vinfo["entries"][0]
+                    vid_id = vid.get("id", "")
+                    vext = vid.get("ext", "webm")
+                    path = temp_dir / f"{vid_id}.{vext}"
+                    with dl_lock2:
+                        results.append((path, search))
+                        cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {search}")
+        except Exception:
+            with dl_lock2:
+                cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {search}")
+
+    with ThreadPoolExecutor(max_workers=threads2) as pool:
+        list(pool.map(_spotdl, entries))
+
+    return results if results else None
+
+
 def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
     settings = configure_settings(tgt_ext, codec_info)
     if settings.dry_run:
         clear_screen()
         cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('dry_run_title')} {C.RST}")
-        cprint(f"  {tr('dry_run_info')} {len(yourls)} video(s) {tr('from')} YouTube {tr('to')} {tgt_ext}")
-        for url in yourls:
-            cprint(f"  {C.LG}{url}{C.RST}")
+        cprint(f"  {tr('dry_run_info')} {len(yourls)} source(s) {tr('to')} {tgt_ext}")
+        for kind, url in yourls:
+            cprint(f"  {C.LG}[{kind}]{C.RST} {url}")
         cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('done')} {C.RST}")
         press_enter()
         return
@@ -862,18 +1037,26 @@ def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
     downloaded = []
     dl_lock = threading.Lock()
 
-    def _dl_one(url):
-        result = download_youtube_audio(url, temp_dir)
-        with dl_lock:
-            if result:
-                src_path, title = result
-                downloaded.append((src_path, title))
-                cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {title}")
-            else:
-                cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
+    def _dl_one(kind, url):
+        if kind == "spotify":
+            result = download_spotify_playlist(url, temp_dir)
+            with dl_lock:
+                if result:
+                    downloaded.extend(result)
+                else:
+                    cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
+        else:
+            result = download_youtube_audio(url, temp_dir)
+            with dl_lock:
+                if result:
+                    src_path, title = result
+                    downloaded.append((src_path, title))
+                    cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {title}")
+                else:
+                    cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
 
     with ThreadPoolExecutor(max_workers=threads) as pool:
-        list(pool.map(_dl_one, yourls))
+        list(pool.map(lambda args: _dl_one(*args), yourls))
 
     if not downloaded:
         cprint(f"  [!] {tr('no_files')}", C.YLW)
