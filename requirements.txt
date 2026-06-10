@@ -1,2 +1,1 @@
-# HiyoConvert uses only Python standard library.
-# No external packages required.
+yt-dlp>=2024.12.0

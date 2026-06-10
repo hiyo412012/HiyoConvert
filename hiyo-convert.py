@@ -75,6 +75,17 @@ LANG = {
         "choose_dir_path": "Enter full directory path / Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn \u0111\u1ea7y \u0111\u1ee7",
         "choose_dir_invalid": "Invalid path / \u0110\u01b0\u1eddng d\u1eabn kh\u00f4ng h\u1ee3p l\u1ec7",
         "choose_dir_pick": "Pick an option / Ch\u1ecdn m\u1ed9t m\u1ee5c",
+        "source_type": "Source type / Lo\u1ea1i ngu\u1ed3n",
+        "local_files": "Local files / File c\u1ee5c b\u1ed9",
+        "youtube": "YouTube URL / URL YouTube",
+        "enter_urls": "Enter YouTube URLs (one per line, empty line to finish) / Nh\u1eadp URL YouTube (m\u1ed7i d\u00f2ng m\u1ed9t URL, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac)",
+        "no_urls": "No URLs entered / Ch\u01b0a nh\u1eadp URL",
+        "downloading": "Downloading / \u0110ang t\u1ea3i",
+        "downloaded": "Downloaded / \u0110\u00e3 t\u1ea3i",
+        "from": "from / t\u1eeb",
+        "playlist": "Playlist / Danh s\u00e1ch",
+        "invalid_url": "Invalid URL / URL kh\u00f4ng h\u1ee3p l\u1ec7",
+        "download_error": "Download failed / T\u1ea3i th\u1ea5t b\u1ea1i",
     },
     "vi": {
         "title": "=== HiyoConvert ===",
@@ -143,6 +154,17 @@ LANG = {
         "choose_dir_path": "Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn \u0111\u1ea7y \u0111\u1ee7 / Enter full directory path",
         "choose_dir_invalid": "\u0110\u01b0\u1eddng d\u1eabn kh\u00f4ng h\u1ee3p l\u1ec7 / Invalid path",
         "choose_dir_pick": "Ch\u1ecdn m\u1ed9t m\u1ee5c / Pick an option",
+        "source_type": "Lo\u1ea1i ngu\u1ed3n / Source type",
+        "local_files": "File c\u1ee5c b\u1ed9 / Local files",
+        "youtube": "URL YouTube / YouTube URL",
+        "enter_urls": "Nh\u1eadp URL YouTube (m\u1ed7i d\u00f2ng m\u1ed9t URL, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac) / Enter YouTube URLs (one per line, empty line to finish)",
+        "no_urls": "Ch\u01b0a nh\u1eadp URL / No URLs entered",
+        "downloading": "\u0110ang t\u1ea3i / Downloading",
+        "downloaded": "\u0110\u00e3 t\u1ea3i / Downloaded",
+        "from": "t\u1eeb / from",
+        "playlist": "Danh s\u00e1ch / Playlist",
+        "invalid_url": "URL kh\u00f4ng h\u1ee3p l\u1ec7 / Invalid URL",
+        "download_error": "T\u1ea3i th\u1ea5t b\u1ea1i / Download failed",
     },
 }
 
@@ -563,6 +585,198 @@ def choose_language():
             return None
 
 
+def choose_source_type():
+    items = [
+        (tr("local_files"), "local"),
+        (tr("youtube"), "youtube"),
+    ]
+    print(f"\n--- {tr('source_type')} ---")
+    for i, (label, _) in enumerate(items, 1):
+        print(f"  [{i}] {label}")
+    print(f"  [Q] {tr('quit')}")
+    while True:
+        sel = input("> ").strip().lower()
+        if sel == "q":
+            return None
+        try:
+            n = int(sel)
+            if 1 <= n <= len(items):
+                return items[n - 1][1]
+        except ValueError:
+            pass
+
+
+def input_youtube_urls():
+    print(f"\n--- {tr('enter_urls')} ---")
+    urls = []
+    while True:
+        line = input("> ").strip()
+        if not line:
+            break
+        if re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', line):
+            urls.append(line)
+        else:
+            print(f"  [!] {tr('invalid_url')}: {line}")
+    if not urls:
+        print(f"  [!] {tr('no_urls')}")
+        return None
+    return urls
+
+
+def download_youtube_audio(url, temp_dir):
+    try:
+        import yt_dlp
+    except ImportError:
+        print(f"  [!] yt-dlp not installed. Run: pip install yt-dlp")
+        return None
+    outtmpl = str(temp_dir / "%(title)s.%(ext)s")
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": outtmpl,
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": False,
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get("title", "unknown")
+            ext = info.get("ext", "webm")
+            downloaded = temp_dir / f"{info.get('title', 'unknown')}.{ext}"
+            if not downloaded.exists():
+                for f in temp_dir.iterdir():
+                    if f.is_file() and f.name.startswith(info.get("title", "")):
+                        downloaded = f
+                        break
+            return downloaded, title
+    except Exception as e:
+        print(f"  [!] {tr('download_error')}: {e}")
+        return None
+
+
+def convert_youtube_files(downloaded, dst_ext, codec, settings, codec_info):
+    threads = max(1, os.cpu_count() - 1) if os.cpu_count() else 2
+    total = len(downloaded)
+    print(f"\n--- {tr('converting')} {total} {tr('files')} ({tr('threads')}: {threads}) ---\n")
+    start = time.time()
+    ok = skip = fail = 0
+    errors = []
+    total_orig = 0
+    total_dst = 0
+
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        fut = {}
+        for src_path, title in downloaded:
+            if src_path is None:
+                continue
+            output = get_youtube_output_path(title, dst_ext, settings)
+            fut[pool.submit(convert_youtube_one, src_path, output, dst_ext, codec, settings, codec_info)] = title
+
+        for f in as_completed(fut):
+            result = f.result()
+            if result is None:
+                continue
+            status, name, orig_sz, dst_sz = result
+            if status == "ok":
+                ok += 1
+                total_orig += orig_sz
+                total_dst += dst_sz
+                print(f"  [{tr('ok')}] {name}")
+            else:
+                fail += 1
+                print(f"  [{tr('fail')}] {name}")
+
+    elapsed = time.time() - start
+    print(f"\n--- {tr('done')} ---")
+    print(f"  {tr('ok')}: {ok}  |  {tr('fail')}: {fail}")
+    print(f"  {tr('time')}: {elapsed:.1f}s")
+    if total_orig > 0 and total_dst > 0:
+        saved = total_orig - total_dst
+        direction = "smaller" if saved >= 0 else "larger"
+        print(f"  {tr('size')}: {format_size(total_orig)} \u2192 {format_size(total_dst)} ({format_size(abs(saved))} {direction})")
+
+
+def get_youtube_output_path(title, dst_ext, settings):
+    name = title
+    if settings.simplify:
+        name = simplify_name(name)
+    if settings.output_dir:
+        dst = settings.output_dir / f"{name}{dst_ext}"
+    else:
+        dst = Path.cwd() / f"{name}{dst_ext}"
+    counter = 1
+    while dst.exists():
+        stem = f"{name}_{counter}"
+        if settings.output_dir:
+            dst = settings.output_dir / f"{stem}{dst_ext}"
+        else:
+            dst = Path.cwd() / f"{stem}{dst_ext}"
+        counter += 1
+    return dst
+
+
+def convert_youtube_one(src_path, dst, dst_ext, codec, settings, codec_info):
+    short = get_short_name(src_path.stem)
+    cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", "-i", str(src_path)]
+    if settings.strip_meta:
+        cmd += ["-map_metadata", "-1", "-vn"]
+    else:
+        cmd += ["-map_metadata", "0"]
+    cmd += ["-c:a", codec]
+    cmd += quality_to_params(codec_info, settings.quality)
+    if settings.sample_rate > 0:
+        cmd += ["-ar", str(settings.sample_rate)]
+    if settings.channels > 0:
+        cmd += ["-ac", str(settings.channels)]
+    if settings.normalize:
+        cmd += ["-af", "loudnorm=I=-16:LRA=11:TP=-1.5"]
+    cmd += [str(dst)]
+    try:
+        subprocess.run(cmd, check=True)
+        orig_size = src_path.stat().st_size
+        dst_size = dst.stat().st_size
+        src_path.unlink(missing_ok=True)
+        return "ok", short, orig_size, dst_size
+    except subprocess.CalledProcessError:
+        return "fail", short, 0, 0
+
+
+def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
+    settings = configure_settings(tgt_ext, codec_info)
+    if settings.dry_run:
+        print(f"\n=== {tr('dry_run_title')} ===")
+        print(f"{tr('dry_run_info')} {len(yourls)} video(s) {tr('from')} YouTube {tr('to')} {tgt_ext}:\n")
+        for url in yourls:
+            print(f"  {url}")
+        print(f"\n--- {tr('done')} ---")
+        input(f"\n{tr('press_enter')}")
+        return
+
+    import tempfile as _tf
+    temp_dir = Path(_tf.mkdtemp(prefix="hiyoconvert_yt_"))
+    print(f"\n--- {tr('downloading')} {len(yourls)} video(s) ---\n")
+    downloaded = []
+    for url in yourls:
+        print(f"  {tr('downloading')}: {url}")
+        result = download_youtube_audio(url, temp_dir)
+        if result:
+            src_path, title = result
+            downloaded.append((src_path, title))
+            print(f"  [{tr('ok')}] {title}")
+        else:
+            print(f"  [{tr('fail')}] {url}")
+
+    if not downloaded:
+        print(f"  [!] {tr('no_files')}")
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        input(f"\n{tr('press_enter')}")
+        return
+
+    convert_youtube_files(downloaded, tgt_ext, tgt_codec, settings, codec_info)
+    shutil.rmtree(temp_dir, ignore_errors=True)
+    input(f"\n{tr('press_enter')}")
+
+
 def main():
     global L
     if not shutil.which("ffmpeg"):
@@ -573,68 +787,91 @@ def main():
     if L is None:
         return
 
-    if len(sys.argv) > 1:
-        root = Path(sys.argv[1]).resolve()
-        if not root.is_dir():
-            print(f"'{root}' is not a directory")
-            sys.exit(1)
-    else:
-        root = choose_directory()
-        if root is None:
+    src_type = choose_source_type()
+    if src_type is None:
+        return
+
+    if src_type == "local":
+        if len(sys.argv) > 1:
+            root = Path(sys.argv[1]).resolve()
+            if not root.is_dir():
+                print(f"'{root}' is not a directory")
+                sys.exit(1)
+        else:
+            root = choose_directory()
+            if root is None:
+                return
+
+        print(f"\n--- {tr('source')} ---")
+        src_item = pick_menu(SRC_FORMATS, "")
+        if src_item is None:
+            return
+        src_ext = src_item[1]
+
+        print(f"\n--- {tr('target')} ---")
+        tgt_item = pick_menu(TGT_FORMATS, "")
+        if tgt_item is None:
+            return
+        _, tgt_ext, _, tgt_codec = tgt_item
+
+        codec_info = CODECS.get(tgt_ext)
+        if codec_info is None:
+            print(f"Unknown target format: {tgt_ext}")
             return
 
-    print(f"\n--- {tr('source')} ---")
-    src_item = pick_menu(SRC_FORMATS, "")
-    if src_item is None:
-        return
-    src_ext = src_item[1]
+        print(f"\n{tr('scanning')}...")
+        dirs = scan_dirs(root, src_ext)
+        if not dirs:
+            print(f"{tr('no_files')}")
+            return
 
-    print(f"\n--- {tr('target')} ---")
-    tgt_item = pick_menu(TGT_FORMATS, "")
-    if tgt_item is None:
-        return
-    _, tgt_ext, _, tgt_codec = tgt_item
+        selected = pick_dirs(dirs)
+        if not selected:
+            print(tr("none_sel"))
+            return
 
-    codec_info = CODECS.get(tgt_ext)
-    if codec_info is None:
-        print(f"Unknown target format: {tgt_ext}")
-        return
+        all_files = sorted(f for d in selected for f in d.rglob("*")
+                           if src_ext is None and f.suffix.lower() in ALL_AUDIO_EXTS
+                           or src_ext is not None and f.suffix.lower() == src_ext)
+        if not all_files:
+            print(f"{tr('no_files')}")
+            return
 
-    print(f"\n{tr('scanning')}...")
-    dirs = scan_dirs(root, src_ext)
-    if not dirs:
-        print(f"{tr('no_files')}")
-        return
+        print(f"\n{tr('found')} {len(all_files)} {tr('files')}")
+        settings = configure_settings(tgt_ext, codec_info)
 
-    selected = pick_dirs(dirs)
-    if not selected:
-        print(tr("none_sel"))
-        return
+        if settings.dry_run:
+            print(f"\n=== {tr('dry_run_title')} ===")
+            print(f"{tr('dry_run_info')} {len(all_files)} {tr('files')} {tr('to')} {tgt_ext}:\n")
+            for f in all_files:
+                dst = get_output_path(f, tgt_ext, settings, root)
+                short = get_short_name(f.stem)
+                sz = format_size(f.stat().st_size) if f.exists() else "?"
+                print(f"  [{sz}] {short} -> {dst.name}")
+            print(f"\n--- {tr('done')} ---")
+            input(f"\n{tr('press_enter')}")
+            return
 
-    all_files = sorted(f for d in selected for f in d.rglob("*")
-                       if src_ext is None and f.suffix.lower() in ALL_AUDIO_EXTS
-                       or src_ext is not None and f.suffix.lower() == src_ext)
-    if not all_files:
-        print(f"{tr('no_files')}")
-        return
-
-    print(f"\n{tr('found')} {len(all_files)} {tr('files')}")
-    settings = configure_settings(tgt_ext, codec_info)
-
-    if settings.dry_run:
-        print(f"\n=== {tr('dry_run_title')} ===")
-        print(f"{tr('dry_run_info')} {len(all_files)} {tr('files')} {tr('to')} {tgt_ext}:\n")
-        for f in all_files:
-            dst = get_output_path(f, tgt_ext, settings, root)
-            short = get_short_name(f.stem)
-            sz = format_size(f.stat().st_size) if f.exists() else "?"
-            print(f"  [{sz}] {short} -> {dst.name}")
-        print(f"\n--- {tr('done')} ---")
+        run_batch(all_files, tgt_ext, tgt_codec, settings, codec_info, root)
         input(f"\n{tr('press_enter')}")
-        return
 
-    run_batch(all_files, tgt_ext, tgt_codec, settings, codec_info, root)
-    input(f"\n{tr('press_enter')}")
+    else:
+        print(f"\n--- {tr('target')} ---")
+        tgt_item = pick_menu(TGT_FORMATS, "")
+        if tgt_item is None:
+            return
+        _, tgt_ext, _, tgt_codec = tgt_item
+
+        codec_info = CODECS.get(tgt_ext)
+        if codec_info is None:
+            print(f"Unknown target format: {tgt_ext}")
+            return
+
+        yourls = input_youtube_urls()
+        if yourls is None:
+            return
+
+        run_youtube(yourls, tgt_ext, tgt_codec, codec_info)
 
 
 if __name__ == "__main__":
