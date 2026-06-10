@@ -1,11 +1,89 @@
-import os, re, shutil, subprocess, sys, time, io
+import os, re, shutil, subprocess, sys, time, io, threading
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from collections import OrderedDict
-from threading import Lock
 
 L = None
+
+class C:
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    ITALIC = "\033[3m"
+    RST = "\033[0m"
+    RED = "\033[91m"
+    GRN = "\033[92m"
+    YLW = "\033[93m"
+    BLU = "\033[94m"
+    MAG = "\033[95m"
+    CYN = "\033[96m"
+    WHT = "\033[97m"
+    LG = "\033[90m"
+    B_RED = "\033[101m"
+    B_GRN = "\033[102m"
+
+_lock = threading.Lock()
+
+def clear_screen():
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+def fade_out():
+    for i in range(3):
+        cprint(f"\r  {C.DIM}\u2500\u2500\u2500 {C.RST}", "", "")
+        time.sleep(0.05)
+        cprint(f"\r  {C.DIM}\u2500\u2500\u2500\u2500 {C.RST}", "", "")
+        time.sleep(0.05)
+        cprint(f"\r  {C.DIM}\u2500\u2500\u2500\u2500\u2500 {C.RST}", "", "")
+        time.sleep(0.05)
+    cprint("")
+
+def press_enter():
+    cprint(f"\n  {C.ITALIC}{C.LG}{tr('press_enter')}{C.RST}", end="")
+    input()
+
+def bounce_arrow(n=3):
+    for _ in range(n):
+        cprint(f"\r  {C.CYN}\u21B3{C.RST}  ", "", "")
+        time.sleep(0.08)
+        cprint(f"\r  {C.CYN}  \u21B3{C.RST}", "", "")
+        time.sleep(0.08)
+
+def cprint(text, color="", end="\n"):
+    with _lock:
+        if color:
+            sys.stdout.write(f"{color}{text}{C.RST}{end}")
+        else:
+            sys.stdout.write(f"{text}{end}")
+        sys.stdout.flush()
+
+def spinner_task(msg, task_fn, *args, **kwargs):
+    done = threading.Event()
+    result = [None]
+    exc = [None]
+
+    def worker():
+        try:
+            result[0] = task_fn(*args, **kwargs)
+        except Exception as e:
+            exc[0] = e
+        finally:
+            done.set()
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    frames = "|/-\\"
+    i = 0
+    cprint(f"  {msg} ", C.DIM, "")
+    while not done.is_set():
+        cprint(f"\r  {frames[i]} {msg} ", C.DIM, "")
+        i = (i + 1) % len(frames)
+        time.sleep(0.08)
+    if exc[0]:
+        cprint(f"\r  {C.RED}\u2717{C.RST} {msg}  ", end="\n")
+        raise exc[0]
+    cprint(f"\r  {C.GRN}\u2713{C.RST} {msg}  ", end="\n")
+    return result[0]
 
 LANG = {
     "en": {
@@ -52,6 +130,7 @@ LANG = {
         "no": "NO",
         "toggle": "Toggle / Chuy\u1ec3n",
         "press_enter": "Press Enter / Nh\u1ea5n Enter...",
+        "back_to_menu": "Returning to main menu / Quay l\u1ea1i menu ch\u00ednh",
         "dry_run_title": "=== DRY-RUN / CH\u1ea0Y TH\u1eec ===",
         "dry_run_info": "Would convert / S\u1ebd chuy\u1ec3n",
         "to": "to / th\u00e0nh",
@@ -131,6 +210,7 @@ LANG = {
         "no": "KH\u00d4NG",
         "toggle": "Chuy\u1ec3n / Toggle",
         "press_enter": "Nh\u1ea5n Enter / Press Enter...",
+        "back_to_menu": "Quay l\u1ea1i menu ch\u00ednh / Returning to main menu",
         "dry_run_title": "=== CH\u1ea0Y TH\u1eec / DRY-RUN ===",
         "dry_run_info": "S\u1ebd chuy\u1ec3n / Would convert",
         "to": "th\u00e0nh / to",
@@ -224,15 +304,18 @@ class Settings:
 
 
 def tr(key):
-    return L.get(key, key)
+    val = L.get(key, key)
+    if " / " in val:
+        val = val.split(" / ", 1)[0]
+    return val
 
 
 def pick_menu(items, prompt, cancel_key="q"):
     for i, (label, *_) in enumerate(items, 1):
-        print(f"  [{i}] {label}")
-    print(f"  [{cancel_key.upper()}] {tr('quit')}")
+        cprint(f"  {C.BOLD}[{i}]{C.RST} {label}")
+    cprint(f"  {C.BOLD}[{cancel_key.upper()}]{C.RST} {tr('quit')}")
     while True:
-        sel = input(f"> {prompt} ").strip().lower()
+        sel = input(f"  {C.CYN}>{C.RST} {prompt}").strip().lower()
         if sel == cancel_key:
             return None
         try:
@@ -263,13 +346,13 @@ def scan_dirs(root: Path, src_ext):
 
 
 def pick_dirs(dirs):
-    print(f"\n--- {tr('dirs')} ---")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('dirs')} {C.RST}")
     for i, d in enumerate(dirs, 1):
-        print(f"  [{i}] {d.name}")
-    print(f"  [A] {tr('all')}")
-    print(f"  [Q] {tr('quit')}")
+        cprint(f"  {C.BOLD}[{i}]{C.RST} {d.name}")
+    cprint(f"  {C.BOLD}[A]{C.RST} {tr('all')}")
+    cprint(f"  {C.BOLD}[Q]{C.RST} {tr('quit')}")
     while True:
-        sel = input(f"> {tr('dir_pick')} ").strip().lower()
+        sel = input(f"  {C.CYN}>{C.RST} {tr('dir_pick')}").strip().lower()
         if sel == "q":
             return None
         if sel == "a":
@@ -347,32 +430,32 @@ def configure_settings(tgt_ext, codec_info):
                 ("Stereo", 2), ("Mono", 1)]
 
     while True:
-        print(f"\n{tr('config_header')}")
+        cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('config_header')} {C.RST}")
         qual_desc = describe_quality(codec_info, settings.quality)
         outdir_str = str(settings.output_dir) if settings.output_dir else tr("none")
         sr_str = f"{settings.sample_rate}Hz" if settings.sample_rate > 0 else tr("original")
         ch_str = {0: tr("original"), 1: "Mono", 2: "Stereo"}.get(settings.channels, str(settings.channels))
-        print(f"  [1] {tr('config_quality')}: {settings.quality}/10 ({qual_desc})")
-        print(f"  [2] {tr('config_outdir')}: {outdir_str}")
-        print(f"  [3] {tr('config_samplerate')}: {sr_str}")
-        print(f"  [4] {tr('config_channels')}: {ch_str}")
-        print(f"  [5] {tr('config_normalize')}: {tr('on') if settings.normalize else tr('off')}")
-        print(f"  [6] {tr('config_strip')}: {tr('on') if settings.strip_meta else tr('off')}")
-        print(f"  [7] {tr('config_simplify')}: {tr('on') if settings.simplify else tr('off')}")
-        print(f"  [8] {tr('config_keep')}: {tr('yes') if settings.keep else tr('no')}")
-        print(f"  [9] {tr('config_dryrun')}: {tr('on') if settings.dry_run else tr('off')}")
-        print(f"  [0] {tr('config_start')}!")
-        sel = input("> ").strip().lower()
+        cprint(f"  {C.BOLD}[1]{C.RST} {tr('config_quality')}: {settings.quality}/10 ({qual_desc})")
+        cprint(f"  {C.BOLD}[2]{C.RST} {tr('config_outdir')}: {C.LG}{outdir_str}{C.RST}")
+        cprint(f"  {C.BOLD}[3]{C.RST} {tr('config_samplerate')}: {C.LG}{sr_str}{C.RST}")
+        cprint(f"  {C.BOLD}[4]{C.RST} {tr('config_channels')}: {C.LG}{ch_str}{C.RST}")
+        cprint(f"  {C.BOLD}[5]{C.RST} {tr('config_normalize')}: {C.MAG}{tr('on') if settings.normalize else tr('off')}{C.RST}")
+        cprint(f"  {C.BOLD}[6]{C.RST} {tr('config_strip')}: {C.MAG}{tr('on') if settings.strip_meta else tr('off')}{C.RST}")
+        cprint(f"  {C.BOLD}[7]{C.RST} {tr('config_simplify')}: {C.MAG}{tr('on') if settings.simplify else tr('off')}{C.RST}")
+        cprint(f"  {C.BOLD}[8]{C.RST} {tr('config_keep')}: {C.MAG}{tr('yes') if settings.keep else tr('no')}{C.RST}")
+        cprint(f"  {C.BOLD}[9]{C.RST} {tr('config_dryrun')}: {C.MAG}{tr('on') if settings.dry_run else tr('off')}{C.RST}")
+        cprint(f"  {C.BOLD}[0]{C.RST} {C.CYN}{tr('config_start')}!{C.RST}")
+        sel = input(f"  {C.CYN}>{C.RST} ").strip().lower()
         if sel in ("0", "s", "start"):
             return settings
         elif sel == "1":
             try:
-                q = int(input(f"> {tr('enter_quality')} "))
+                q = int(input(f"  {C.CYN}>{C.RST} {tr('enter_quality')}"))
                 settings.quality = max(1, min(10, q))
             except ValueError:
                 pass
         elif sel == "2":
-            p = input(f"> {tr('enter_outdir')} ").strip()
+            p = input(f"  {C.CYN}>{C.RST} {tr('enter_outdir')}").strip()
             if p:
                 pobj = Path(p).resolve()
                 pobj.mkdir(parents=True, exist_ok=True)
@@ -471,7 +554,7 @@ def convert_file(src: Path, dst_ext, codec, settings, codec_info, root=None):
 def run_batch(files, dst_ext, codec, settings, codec_info, root=None):
     threads = max(1, os.cpu_count() - 1) if os.cpu_count() else 2
     total = len(files)
-    print(f"\n--- {tr('converting')} {total} {tr('files')} ({tr('threads')}: {threads}) ---\n")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('converting')} {total} {tr('files')} ({tr('threads')}: {threads}) {C.RST}")
     start = time.time()
     ok = skip = fail = 0
     errors = []
@@ -490,28 +573,28 @@ def run_batch(files, dst_ext, codec, settings, codec_info, root=None):
                 ok += 1
                 total_orig += orig_size
                 total_dst += dst_size
-                print(f"  [{tr('ok')}] {name}")
+                cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {name}")
             elif status == "skip":
                 skip += 1
             else:
                 fail += 1
                 errors.append(fut[f])
-                print(f"  [{tr('fail')}] {name}")
+                cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {name}")
 
     elapsed = time.time() - start
-    print(f"\n--- {tr('done')} ---")
-    print(f"  {tr('ok')}: {ok}  |  {tr('skip')}: {skip}  |  {tr('fail')}: {fail}")
-    print(f"  {tr('time')}: {elapsed:.1f}s")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('done')} {C.RST}")
+    cprint(f"  {C.GRN}{tr('ok')}: {ok}{C.RST}  |  {C.YLW}{tr('skip')}: {skip}{C.RST}  |  {C.RED}{tr('fail')}: {fail}{C.RST}")
+    cprint(f"  {tr('time')}: {elapsed:.1f}s")
     if total_orig > 0 and total_dst > 0:
         saved = total_orig - total_dst
         direction = "smaller" if saved >= 0 else "larger"
-        print(f"  {tr('size')}: {format_size(total_orig)} \u2192 {format_size(total_dst)} ({format_size(abs(saved))} {direction})")
+        cprint(f"  {tr('size')}: {format_size(total_orig)} \u2192 {format_size(total_dst)} ({format_size(abs(saved))} {direction})")
     if errors:
         log_path = Path("hiyo-convert_errors.log")
         with open(log_path, "w", encoding="utf-8") as f:
             for e in errors:
                 f.write(f"{e}\n")
-        print(f"  {tr('error_log')}: {log_path.resolve()}")
+        cprint(f"  [!] {tr('error_log')}: {log_path.resolve()}", C.YLW)
 
 
 def choose_directory():
@@ -521,12 +604,12 @@ def choose_directory():
     ]
     if sys.platform == "win32":
         items.append((tr("choose_dir_browse"), 3))
-    print(f"\n--- {tr('choose_dir_title')} ---")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('choose_dir_title')} {C.RST}")
     for i, (label, _) in enumerate(items, 1):
-        print(f"  [{i}] {label}")
-    print(f"  [Q] {tr('quit')}")
+        cprint(f"  {C.BOLD}[{i}]{C.RST} {label}")
+    cprint(f"  {C.BOLD}[Q]{C.RST} {tr('quit')}")
     while True:
-        sel = input(f"> {tr('choose_dir_pick')} ").strip().lower()
+        sel = input(f"  {C.CYN}>{C.RST} {tr('choose_dir_pick')}").strip().lower()
         if sel == "q":
             return None
         try:
@@ -537,13 +620,13 @@ def choose_directory():
             if action == 1:
                 return Path.cwd()
             elif action == 2:
-                p = input(f"> {tr('choose_dir_path')}: ").strip()
+                p = input(f"  {C.CYN}>{C.RST} {tr('choose_dir_path')}: ").strip()
                 if not p:
                     continue
                 pobj = Path(p).resolve()
                 if pobj.is_dir():
                     return pobj
-                print(f"  [!] {tr('choose_dir_invalid')}: {pobj}")
+                cprint(f"  [!] {tr('choose_dir_invalid')}: {pobj}", C.YLW)
             elif action == 3:
                 import subprocess as _sp
                 ps_cmd = (
@@ -561,22 +644,22 @@ def choose_directory():
                     p = result.stdout.strip()
                     if p and Path(p).is_dir():
                         return Path(p).resolve()
-                    print(f"  [!] {tr('choose_dir_invalid')}")
+                    cprint(f"  [!] {tr('choose_dir_invalid')}", C.YLW)
                 except Exception:
-                    print(f"  [!] {tr('choose_dir_invalid')}")
+                    cprint(f"  [!] {tr('choose_dir_invalid')}", C.YLW)
         except ValueError:
             pass
     return None
 
 
 def choose_language():
-    print(f"\n  === HiyoConvert ===")
-    print(f"\n  {LANG['en']['choose_lang']}")
-    print(f"  [1] English")
-    print(f"  [2] Ti\u1ebfng Vi\u1ec7t")
-    print(f"  [Q] {LANG['en']['quit']}")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2566 HiyoConvert {C.RST}", color="")
+    cprint(f"\n  {C.LG}{LANG['en']['choose_lang']}{C.RST}")
+    cprint(f"  {C.BOLD}[1]{C.RST} English")
+    cprint(f"  {C.BOLD}[2]{C.RST} Ti\u1ebfng Vi\u1ec7t")
+    cprint(f"  {C.BOLD}[Q]{C.RST} {LANG['en']['quit']}")
     while True:
-        sel = input("> ").strip().lower()
+        sel = input(f"  {C.CYN}>{C.RST} ").strip().lower()
         if sel == "1":
             return LANG["en"]
         elif sel == "2":
@@ -590,12 +673,12 @@ def choose_source_type():
         (tr("local_files"), "local"),
         (tr("youtube"), "youtube"),
     ]
-    print(f"\n--- {tr('source_type')} ---")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('source_type')} {C.RST}")
     for i, (label, _) in enumerate(items, 1):
-        print(f"  [{i}] {label}")
-    print(f"  [Q] {tr('quit')}")
+        cprint(f"  {C.BOLD}[{i}]{C.RST} {label}")
+    cprint(f"  {C.BOLD}[Q]{C.RST} {tr('quit')}")
     while True:
-        sel = input("> ").strip().lower()
+        sel = input(f"  {C.CYN}>{C.RST} ").strip().lower()
         if sel == "q":
             return None
         try:
@@ -607,10 +690,10 @@ def choose_source_type():
 
 
 def input_youtube_urls():
-    print(f"\n--- {tr('enter_urls')} ---")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('enter_urls')} {C.RST}")
     urls = []
     while True:
-        line = input("> ").strip()
+        line = input(f"  {C.CYN}>{C.RST} ").strip()
         if not line:
             break
         parts = [p.strip() for p in re.split(r'[,\s]+', line) if p.strip()]
@@ -618,9 +701,9 @@ def input_youtube_urls():
             if re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', p):
                 urls.append(p)
             else:
-                print(f"  [!] {tr('invalid_url')}: {p}")
+                cprint(f"  [!] {tr('invalid_url')}: {p}", C.YLW)
     if not urls:
-        print(f"  [!] {tr('no_urls')}")
+        cprint(f"  [!] {tr('no_urls')}", C.YLW)
         return None
     return urls
 
@@ -629,7 +712,7 @@ def download_youtube_audio(url, temp_dir):
     try:
         import yt_dlp
     except ImportError:
-        print(f"  [!] yt-dlp not installed. Run: pip install yt-dlp")
+        cprint(f"  [!] yt-dlp not installed. Run: pip install yt-dlp", C.RED)
         return None
     vid = url.split("v=")[-1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
     outtmpl = str(temp_dir / f"%(id)s.%(ext)s")
@@ -654,17 +737,16 @@ def download_youtube_audio(url, temp_dir):
                         break
             return downloaded, title
     except Exception as e:
-        print(f"  [!] {tr('download_error')}: {e}")
+        cprint(f"  [!] {tr('download_error')}: {e}", C.YLW)
         return None
 
 
 def convert_youtube_files(downloaded, dst_ext, codec, settings, codec_info):
     threads = max(1, os.cpu_count() - 1) if os.cpu_count() else 2
     total = len(downloaded)
-    print(f"\n--- {tr('converting')} {total} {tr('files')} ({tr('threads')}: {threads}) ---\n")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('converting')} {total} {tr('files')} ({tr('threads')}: {threads}) {C.RST}")
     start = time.time()
-    ok = skip = fail = 0
-    errors = []
+    ok = fail = 0
     total_orig = 0
     total_dst = 0
 
@@ -685,19 +767,19 @@ def convert_youtube_files(downloaded, dst_ext, codec, settings, codec_info):
                 ok += 1
                 total_orig += orig_sz
                 total_dst += dst_sz
-                print(f"  [{tr('ok')}] {name}")
+                cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {name}")
             else:
                 fail += 1
-                print(f"  [{tr('fail')}] {name}")
+                cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {name}")
 
     elapsed = time.time() - start
-    print(f"\n--- {tr('done')} ---")
-    print(f"  {tr('ok')}: {ok}  |  {tr('fail')}: {fail}")
-    print(f"  {tr('time')}: {elapsed:.1f}s")
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('done')} {C.RST}")
+    cprint(f"  {C.GRN}{tr('ok')}: {ok}{C.RST}  |  {C.RED}{tr('fail')}: {fail}{C.RST}")
+    cprint(f"  {tr('time')}: {elapsed:.1f}s")
     if total_orig > 0 and total_dst > 0:
         saved = total_orig - total_dst
         direction = "smaller" if saved >= 0 else "larger"
-        print(f"  {tr('size')}: {format_size(total_orig)} \u2192 {format_size(total_dst)} ({format_size(abs(saved))} {direction})")
+        cprint(f"  {tr('size')}: {format_size(total_orig)} \u2192 {format_size(total_dst)} ({format_size(abs(saved))} {direction})")
 
 
 def get_youtube_output_path(title, dst_ext, settings):
@@ -748,134 +830,165 @@ def convert_youtube_one(src_path, dst, dst_ext, codec, settings, codec_info):
 def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
     settings = configure_settings(tgt_ext, codec_info)
     if settings.dry_run:
-        print(f"\n=== {tr('dry_run_title')} ===")
-        print(f"{tr('dry_run_info')} {len(yourls)} video(s) {tr('from')} YouTube {tr('to')} {tgt_ext}:\n")
+        clear_screen()
+        cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('dry_run_title')} {C.RST}")
+        cprint(f"  {tr('dry_run_info')} {len(yourls)} video(s) {tr('from')} YouTube {tr('to')} {tgt_ext}")
         for url in yourls:
-            print(f"  {url}")
-        print(f"\n--- {tr('done')} ---")
-        input(f"\n{tr('press_enter')}")
+            cprint(f"  {C.LG}{url}{C.RST}")
+        cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('done')} {C.RST}")
+        press_enter()
         return
 
     import tempfile as _tf
     temp_dir = Path(_tf.mkdtemp(prefix="hiyoconvert_yt_"))
-    print(f"\n--- {tr('downloading')} {len(yourls)} video(s) ---\n")
+    clear_screen()
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('downloading')} ({len(yourls)}) {C.RST}")
     downloaded = []
     for url in yourls:
-        print(f"  {tr('downloading')}: {url}")
+        cprint(f"  {C.CYN}\u2192{C.RST} {tr('downloading')}: {C.LG}{url}{C.RST}")
         result = download_youtube_audio(url, temp_dir)
         if result:
             src_path, title = result
             downloaded.append((src_path, title))
-            print(f"  [{tr('ok')}] {title}")
+            cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {title}")
         else:
-            print(f"  [{tr('fail')}] {url}")
+            cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
 
     if not downloaded:
-        print(f"  [!] {tr('no_files')}")
+        cprint(f"  [!] {tr('no_files')}", C.YLW)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        input(f"\n{tr('press_enter')}")
+        press_enter()
         return
 
+    clear_screen()
     convert_youtube_files(downloaded, tgt_ext, tgt_codec, settings, codec_info)
     shutil.rmtree(temp_dir, ignore_errors=True)
-    input(f"\n{tr('press_enter')}")
 
 
 def main():
     global L
     if not shutil.which("ffmpeg"):
-        print("ffmpeg not found. Install with: winget install ffmpeg")
+        cprint("ffmpeg not found. Install with: winget install ffmpeg", C.RED)
         sys.exit(1)
 
+    clear_screen()
+    cprint(f"\n  {C.BOLD}{C.CYN}{C.ITALIC}HiyoConvert{C.RST}", "")
+    time.sleep(0.3)
     L = choose_language()
     if L is None:
         return
 
-    src_type = choose_source_type()
-    if src_type is None:
-        return
+    first = True
+    while True:
+        clear_screen()
+        if not first:
+            cprint(f"  {C.LG}{tr('back_to_menu')}{C.RST}")
+            time.sleep(0.4)
+            bounce_arrow(2)
+        first = False
+        fade_out()
+        clear_screen()
 
-    if src_type == "local":
-        if len(sys.argv) > 1:
-            root = Path(sys.argv[1]).resolve()
-            if not root.is_dir():
-                print(f"'{root}' is not a directory")
-                sys.exit(1)
+        src_type = choose_source_type()
+        if src_type is None:
+            break
+
+        if src_type == "local":
+            clear_screen()
+            fade_out()
+            clear_screen()
+
+            if len(sys.argv) > 1:
+                root = Path(sys.argv[1]).resolve()
+                if not root.is_dir():
+                    cprint(f"  [!] '{root}' {tr('choose_dir_invalid')}", C.RED)
+                    sys.exit(1)
+            else:
+                root = choose_directory()
+                if root is None:
+                    continue
+
+            clear_screen()
+            cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('source')} {C.RST}")
+            src_item = pick_menu(SRC_FORMATS, "")
+            if src_item is None:
+                continue
+            src_ext = src_item[1]
+
+            clear_screen()
+            cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('target')} {C.RST}")
+            tgt_item = pick_menu(TGT_FORMATS, "")
+            if tgt_item is None:
+                continue
+            _, tgt_ext, _, tgt_codec = tgt_item
+
+            codec_info = CODECS.get(tgt_ext)
+            if codec_info is None:
+                cprint(f"  [!] Unknown format: {tgt_ext}", C.RED)
+                continue
+
+            clear_screen()
+            cprint(f"  {tr('scanning')}...", C.DIM)
+            dirs = spinner_task(tr('scanning'), scan_dirs, root, src_ext)
+            if not dirs:
+                cprint(f"  [!] {tr('no_files')}", C.YLW)
+                press_enter()
+                continue
+
+            selected = pick_dirs(dirs)
+            if not selected:
+                cprint(f"  {tr('none_sel')}", C.YLW)
+                press_enter()
+                continue
+
+            all_files = sorted(f for d in selected for f in d.rglob("*")
+                               if src_ext is None and f.suffix.lower() in ALL_AUDIO_EXTS
+                               or src_ext is not None and f.suffix.lower() == src_ext)
+            if not all_files:
+                cprint(f"  [!] {tr('no_files')}", C.YLW)
+                press_enter()
+                continue
+
+            cprint(f"  {tr('found')} {C.BOLD}{len(all_files)}{C.RST} {tr('files')}")
+            time.sleep(0.2)
+            settings = configure_settings(tgt_ext, codec_info)
+
+            if settings.dry_run:
+                clear_screen()
+                cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('dry_run_title')} {C.RST}")
+                cprint(f"  {tr('dry_run_info')} {len(all_files)} {tr('files')} {tr('to')} {tgt_ext}:")
+                for f in all_files:
+                    dst = get_output_path(f, tgt_ext, settings, root)
+                    short = get_short_name(f.stem)
+                    sz = format_size(f.stat().st_size) if f.exists() else "?"
+                    cprint(f"  {C.LG}[{sz}]{C.RST} {short} {C.LG}\u2192{C.RST} {dst.name}")
+                cprint(f"\n  {C.BOLD}{C.CYN}\u2566 {tr('done')} {C.RST}")
+                press_enter()
+                continue
+
+            clear_screen()
+            run_batch(all_files, tgt_ext, tgt_codec, settings, codec_info, root)
+            press_enter()
+
         else:
-            root = choose_directory()
-            if root is None:
-                return
+            clear_screen()
+            cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('target')} {C.RST}")
+            tgt_item = pick_menu(TGT_FORMATS, "")
+            if tgt_item is None:
+                continue
+            _, tgt_ext, _, tgt_codec = tgt_item
 
-        print(f"\n--- {tr('source')} ---")
-        src_item = pick_menu(SRC_FORMATS, "")
-        if src_item is None:
-            return
-        src_ext = src_item[1]
+            codec_info = CODECS.get(tgt_ext)
+            if codec_info is None:
+                cprint(f"  [!] Unknown format: {tgt_ext}", C.RED)
+                continue
 
-        print(f"\n--- {tr('target')} ---")
-        tgt_item = pick_menu(TGT_FORMATS, "")
-        if tgt_item is None:
-            return
-        _, tgt_ext, _, tgt_codec = tgt_item
+            clear_screen()
+            yourls = input_youtube_urls()
+            if yourls is None:
+                continue
 
-        codec_info = CODECS.get(tgt_ext)
-        if codec_info is None:
-            print(f"Unknown target format: {tgt_ext}")
-            return
-
-        print(f"\n{tr('scanning')}...")
-        dirs = scan_dirs(root, src_ext)
-        if not dirs:
-            print(f"{tr('no_files')}")
-            return
-
-        selected = pick_dirs(dirs)
-        if not selected:
-            print(tr("none_sel"))
-            return
-
-        all_files = sorted(f for d in selected for f in d.rglob("*")
-                           if src_ext is None and f.suffix.lower() in ALL_AUDIO_EXTS
-                           or src_ext is not None and f.suffix.lower() == src_ext)
-        if not all_files:
-            print(f"{tr('no_files')}")
-            return
-
-        print(f"\n{tr('found')} {len(all_files)} {tr('files')}")
-        settings = configure_settings(tgt_ext, codec_info)
-
-        if settings.dry_run:
-            print(f"\n=== {tr('dry_run_title')} ===")
-            print(f"{tr('dry_run_info')} {len(all_files)} {tr('files')} {tr('to')} {tgt_ext}:\n")
-            for f in all_files:
-                dst = get_output_path(f, tgt_ext, settings, root)
-                short = get_short_name(f.stem)
-                sz = format_size(f.stat().st_size) if f.exists() else "?"
-                print(f"  [{sz}] {short} -> {dst.name}")
-            print(f"\n--- {tr('done')} ---")
-            input(f"\n{tr('press_enter')}")
-            return
-
-        run_batch(all_files, tgt_ext, tgt_codec, settings, codec_info, root)
-        input(f"\n{tr('press_enter')}")
-
-    else:
-        print(f"\n--- {tr('target')} ---")
-        tgt_item = pick_menu(TGT_FORMATS, "")
-        if tgt_item is None:
-            return
-        _, tgt_ext, _, tgt_codec = tgt_item
-
-        codec_info = CODECS.get(tgt_ext)
-        if codec_info is None:
-            print(f"Unknown target format: {tgt_ext}")
-            return
-
-        yourls = input_youtube_urls()
-        if yourls is None:
-            return
-
-        run_youtube(yourls, tgt_ext, tgt_codec, codec_info)
+            run_youtube(yourls, tgt_ext, tgt_codec, codec_info)
 
 
 if __name__ == "__main__":
