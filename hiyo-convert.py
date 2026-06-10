@@ -78,7 +78,7 @@ LANG = {
         "source_type": "Source type / Lo\u1ea1i ngu\u1ed3n",
         "local_files": "Local files / File c\u1ee5c b\u1ed9",
         "youtube": "YouTube URL / URL YouTube",
-        "enter_urls": "Enter YouTube URLs (one per line, empty line to finish) / Nh\u1eadp URL YouTube (m\u1ed7i d\u00f2ng m\u1ed9t URL, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac)",
+        "enter_urls": "Enter YouTube URLs (comma or newline separated, empty line to finish) / Nh\u1eadp URL YouTube (c\u00e1ch nhau b\u1eb1ng d\u1ea5u ph\u1ea9y ho\u1eb7c xu\u1ed1ng d\u00f2ng, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac)",
         "no_urls": "No URLs entered / Ch\u01b0a nh\u1eadp URL",
         "downloading": "Downloading / \u0110ang t\u1ea3i",
         "downloaded": "Downloaded / \u0110\u00e3 t\u1ea3i",
@@ -157,7 +157,7 @@ LANG = {
         "source_type": "Lo\u1ea1i ngu\u1ed3n / Source type",
         "local_files": "File c\u1ee5c b\u1ed9 / Local files",
         "youtube": "URL YouTube / YouTube URL",
-        "enter_urls": "Nh\u1eadp URL YouTube (m\u1ed7i d\u00f2ng m\u1ed9t URL, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac) / Enter YouTube URLs (one per line, empty line to finish)",
+        "enter_urls": "Nh\u1eadp URL YouTube (c\u00e1ch nhau b\u1eb1ng d\u1ea5u ph\u1ea9y ho\u1eb7c xu\u1ed1ng d\u00f2ng, d\u00f2ng tr\u1ed1ng \u0111\u1ec3 k\u1ebft th\u00fac) / Enter YouTube URLs (comma or newline separated, empty line to finish)",
         "no_urls": "Ch\u01b0a nh\u1eadp URL / No URLs entered",
         "downloading": "\u0110ang t\u1ea3i / Downloading",
         "downloaded": "\u0110\u00e3 t\u1ea3i / Downloaded",
@@ -613,10 +613,12 @@ def input_youtube_urls():
         line = input("> ").strip()
         if not line:
             break
-        if re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', line):
-            urls.append(line)
-        else:
-            print(f"  [!] {tr('invalid_url')}: {line}")
+        parts = [p.strip() for p in re.split(r'[,\s]+', line) if p.strip()]
+        for p in parts:
+            if re.match(r'^https?://(www\.)?(youtube\.com|youtu\.be)/', p):
+                urls.append(p)
+            else:
+                print(f"  [!] {tr('invalid_url')}: {p}")
     if not urls:
         print(f"  [!] {tr('no_urls')}")
         return None
@@ -629,7 +631,8 @@ def download_youtube_audio(url, temp_dir):
     except ImportError:
         print(f"  [!] yt-dlp not installed. Run: pip install yt-dlp")
         return None
-    outtmpl = str(temp_dir / "%(title)s.%(ext)s")
+    vid = url.split("v=")[-1].split("&")[0] if "v=" in url else url.split("/")[-1].split("?")[0]
+    outtmpl = str(temp_dir / f"%(id)s.%(ext)s")
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
@@ -642,10 +645,11 @@ def download_youtube_audio(url, temp_dir):
             info = ydl.extract_info(url, download=True)
             title = info.get("title", "unknown")
             ext = info.get("ext", "webm")
-            downloaded = temp_dir / f"{info.get('title', 'unknown')}.{ext}"
+            video_id = info.get("id", vid)
+            downloaded = temp_dir / f"{video_id}.{ext}"
             if not downloaded.exists():
                 for f in temp_dir.iterdir():
-                    if f.is_file() and f.name.startswith(info.get("title", "")):
+                    if f.is_file() and f.name.startswith(video_id):
                         downloaded = f
                         break
             return downloaded, title
