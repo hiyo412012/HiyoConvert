@@ -68,6 +68,13 @@ LANG = {
         "config_keep": "Keep originals / Gi\u1eef g\u1ed1c",
         "config_dryrun": "Dry-run / Ch\u1ea1y th\u1eed",
         "config_start": "Start conversion / B\u1eaft \u0111\u1ea7u",
+        "choose_dir_title": "Select directory / Ch\u1ecdn th\u01b0 m\u1ee5c",
+        "choose_dir_curr": "Use current directory / D\u00f9ng th\u01b0 m\u1ee5c hi\u1ec7n t\u1ea1i",
+        "choose_dir_enter": "Enter path manually / Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn th\u1ee7 c\u00f4ng",
+        "choose_dir_browse": "Browse (Windows folder picker) / Duy\u1ec7t (ch\u1ecdn th\u01b0 m\u1ee5c)",
+        "choose_dir_path": "Enter full directory path / Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn \u0111\u1ea7y \u0111\u1ee7",
+        "choose_dir_invalid": "Invalid path / \u0110\u01b0\u1eddng d\u1eabn kh\u00f4ng h\u1ee3p l\u1ec7",
+        "choose_dir_pick": "Pick an option / Ch\u1ecdn m\u1ed9t m\u1ee5c",
     },
     "vi": {
         "title": "=== HiyoConvert ===",
@@ -129,6 +136,13 @@ LANG = {
         "config_keep": "Gi\u1eef g\u1ed1c / Keep originals",
         "config_dryrun": "Ch\u1ea1y th\u1eed / Dry-run",
         "config_start": "B\u1eaft \u0111\u1ea7u / Start",
+        "choose_dir_title": "Ch\u1ecdn th\u01b0 m\u1ee5c / Select directory",
+        "choose_dir_curr": "D\u00f9ng th\u01b0 m\u1ee5c hi\u1ec7n t\u1ea1i / Use current directory",
+        "choose_dir_enter": "Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn th\u1ee7 c\u00f4ng / Enter path manually",
+        "choose_dir_browse": "Duy\u1ec7t (ch\u1ecdn th\u01b0 m\u1ee5c) / Browse (Windows folder picker)",
+        "choose_dir_path": "Nh\u1eadp \u0111\u01b0\u1eddng d\u1eabn \u0111\u1ea7y \u0111\u1ee7 / Enter full directory path",
+        "choose_dir_invalid": "\u0110\u01b0\u1eddng d\u1eabn kh\u00f4ng h\u1ee3p l\u1ec7 / Invalid path",
+        "choose_dir_pick": "Ch\u1ecdn m\u1ed9t m\u1ee5c / Pick an option",
     },
 }
 
@@ -478,17 +492,62 @@ def run_batch(files, dst_ext, codec, settings, codec_info, root=None):
         print(f"  {tr('error_log')}: {log_path.resolve()}")
 
 
-def main():
-    global L
-    if not shutil.which("ffmpeg"):
-        print("ffmpeg not found. Install with: winget install ffmpeg")
-        sys.exit(1)
+def choose_directory():
+    items = [
+        (tr("choose_dir_curr"), 1),
+        (tr("choose_dir_enter"), 2),
+    ]
+    if sys.platform == "win32":
+        items.append((tr("choose_dir_browse"), 3))
+    print(f"\n--- {tr('choose_dir_title')} ---")
+    for i, (label, _) in enumerate(items, 1):
+        print(f"  [{i}] {label}")
+    print(f"  [Q] {tr('quit')}")
+    while True:
+        sel = input(f"> {tr('choose_dir_pick')} ").strip().lower()
+        if sel == "q":
+            return None
+        try:
+            n = int(sel)
+            if n < 1 or n > len(items):
+                continue
+            _, action = items[n - 1]
+            if action == 1:
+                return Path.cwd()
+            elif action == 2:
+                p = input(f"> {tr('choose_dir_path')}: ").strip()
+                if not p:
+                    continue
+                pobj = Path(p).resolve()
+                if pobj.is_dir():
+                    return pobj
+                print(f"  [!] {tr('choose_dir_invalid')}: {pobj}")
+            elif action == 3:
+                import subprocess as _sp
+                ps_cmd = (
+                    'Add-Type -AssemblyName System.Windows.Forms; '
+                    ' $f=New-Object System.Windows.Forms.FolderBrowserDialog; '
+                    ' $f.Description="Select a music folder"; '
+                    ' $f.ShowDialog() | Out-Null; '
+                    ' Write-Output $f.SelectedPath'
+                )
+                try:
+                    result = _sp.run(
+                        ["powershell", "-NoProfile", "-Command", ps_cmd],
+                        capture_output=True, text=True, timeout=15
+                    )
+                    p = result.stdout.strip()
+                    if p and Path(p).is_dir():
+                        return Path(p).resolve()
+                    print(f"  [!] {tr('choose_dir_invalid')}")
+                except Exception:
+                    print(f"  [!] {tr('choose_dir_invalid')}")
+        except ValueError:
+            pass
+    return None
 
-    root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
-    if not root.is_dir():
-        print(f"'{root}' is not a directory")
-        sys.exit(1)
 
+def choose_language():
     print(f"\n  === HiyoConvert ===")
     print(f"\n  {LANG['en']['choose_lang']}")
     print(f"  [1] English")
@@ -497,12 +556,31 @@ def main():
     while True:
         sel = input("> ").strip().lower()
         if sel == "1":
-            L = LANG["en"]
-            break
+            return LANG["en"]
         elif sel == "2":
-            L = LANG["vi"]
-            break
+            return LANG["vi"]
         elif sel == "q":
+            return None
+
+
+def main():
+    global L
+    if not shutil.which("ffmpeg"):
+        print("ffmpeg not found. Install with: winget install ffmpeg")
+        sys.exit(1)
+
+    L = choose_language()
+    if L is None:
+        return
+
+    if len(sys.argv) > 1:
+        root = Path(sys.argv[1]).resolve()
+        if not root.is_dir():
+            print(f"'{root}' is not a directory")
+            sys.exit(1)
+    else:
+        root = choose_directory()
+        if root is None:
             return
 
     print(f"\n--- {tr('source')} ---")
