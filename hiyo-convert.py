@@ -1,4 +1,4 @@
-import os, re, shutil, subprocess, sys, time, io, threading
+import os, re, shutil, subprocess, sys, time, io, threading, unicodedata
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -144,6 +144,7 @@ LANG = {
         "config_normalize": "Normalize / Chu\u1ea9n h\u00f3a",
         "config_strip": "Strip metadata / Xo\u00e1 metadata",
         "config_simplify": "Simplify names / R\u00fat g\u1ecdn t\u00ean",
+        "config_strip_diacritics": "Strip diacritics / B\u1ecf d\u1ea5u",
         "config_keep": "Keep originals / Gi\u1eef g\u1ed1c",
         "config_dryrun": "Dry-run / Ch\u1ea1y th\u1eed",
         "config_start": "Start conversion / B\u1eaft \u0111\u1ea7u",
@@ -224,6 +225,7 @@ LANG = {
         "config_normalize": "Chu\u1ea9n h\u00f3a / Normalize",
         "config_strip": "Xo\u00e1 metadata / Strip metadata",
         "config_simplify": "R\u00fat g\u1ecdn t\u00ean / Simplify names",
+        "config_strip_diacritics": "B\u1ecf d\u1ea5u / Strip diacritics",
         "config_keep": "Gi\u1eef g\u1ed1c / Keep originals",
         "config_dryrun": "Ch\u1ea1y th\u1eed / Dry-run",
         "config_start": "B\u1eaft \u0111\u1ea7u / Start",
@@ -301,6 +303,7 @@ class Settings:
         self.simplify = False
         self.keep = False
         self.dry_run = False
+        self.strip_diacritics = False
 
 
 def tr(key):
@@ -444,6 +447,7 @@ def configure_settings(tgt_ext, codec_info):
         cprint(f"  {C.BOLD}[7]{C.RST} {tr('config_simplify')}: {C.MAG}{tr('on') if settings.simplify else tr('off')}{C.RST}")
         cprint(f"  {C.BOLD}[8]{C.RST} {tr('config_keep')}: {C.MAG}{tr('yes') if settings.keep else tr('no')}{C.RST}")
         cprint(f"  {C.BOLD}[9]{C.RST} {tr('config_dryrun')}: {C.MAG}{tr('on') if settings.dry_run else tr('off')}{C.RST}")
+        cprint(f"  {C.BOLD}[S]{C.RST} {tr('config_strip_diacritics')}: {C.MAG}{tr('on') if settings.strip_diacritics else tr('off')}{C.RST}")
         cprint(f"  {C.BOLD}[0]{C.RST} {C.CYN}{tr('config_start')}!{C.RST}")
         sel = input(f"  {C.CYN}>{C.RST} ").strip().lower()
         if sel in ("0", "s", "start"):
@@ -470,9 +474,16 @@ def configure_settings(tgt_ext, codec_info):
             item = pick_menu(ch_items, "")
             if item:
                 settings.channels = item[1]
+        elif sel == "s":
+            settings.strip_diacritics = not settings.strip_diacritics
         elif sel in ("5", "6", "7", "8", "9"):
             toggles = {"5": "normalize", "6": "strip_meta", "7": "simplify", "8": "keep", "9": "dry_run"}
             setattr(settings, toggles[sel], not getattr(settings, toggles[sel]))
+
+
+def strip_diacritics(text):
+    nfkd = unicodedata.normalize('NFKD', text)
+    return ''.join(c for c in nfkd if not unicodedata.combining(c))
 
 
 def simplify_name(name):
@@ -490,6 +501,8 @@ def get_output_path(src: Path, dst_ext, settings, root=None):
     name = src.stem
     if settings.simplify:
         name = simplify_name(name)
+    if settings.strip_diacritics:
+        name = strip_diacritics(name)
     if settings.output_dir:
         if root:
             try:
@@ -786,6 +799,8 @@ def get_youtube_output_path(title, dst_ext, settings):
     name = title
     if settings.simplify:
         name = simplify_name(name)
+    if settings.strip_diacritics:
+        name = strip_diacritics(name)
     if settings.output_dir:
         dst = settings.output_dir / f"{name}{dst_ext}"
     else:
@@ -842,17 +857,23 @@ def run_youtube(yourls, tgt_ext, tgt_codec, codec_info):
     import tempfile as _tf
     temp_dir = Path(_tf.mkdtemp(prefix="hiyoconvert_yt_"))
     clear_screen()
-    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('downloading')} ({len(yourls)}) {C.RST}")
+    threads = max(1, min(os.cpu_count() or 2, len(yourls)))
+    cprint(f"\n  {C.BOLD}{C.CYN}\u2560 {tr('downloading')} ({len(yourls)}, {tr('threads')}: {threads}) {C.RST}")
     downloaded = []
-    for url in yourls:
-        cprint(f"  {C.CYN}\u2192{C.RST} {tr('downloading')}: {C.LG}{url}{C.RST}")
+    dl_lock = threading.Lock()
+
+    def _dl_one(url):
         result = download_youtube_audio(url, temp_dir)
-        if result:
-            src_path, title = result
-            downloaded.append((src_path, title))
-            cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {title}")
-        else:
-            cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
+        with dl_lock:
+            if result:
+                src_path, title = result
+                downloaded.append((src_path, title))
+                cprint(f"  {C.GRN}[{tr('ok')}]{C.RST} {title}")
+            else:
+                cprint(f"  {C.RED}[{tr('fail')}]{C.RST} {url}")
+
+    with ThreadPoolExecutor(max_workers=threads) as pool:
+        list(pool.map(_dl_one, yourls))
 
     if not downloaded:
         cprint(f"  [!] {tr('no_files')}", C.YLW)
